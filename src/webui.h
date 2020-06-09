@@ -46,6 +46,7 @@ typedef struct pool_stats_t
     uint32_t pool_blocks_found;
     time_t last_block_found;
     time_t last_template_fetched;
+    uint64_t best_hash_difficulty;
 } pool_stats_t;
 
 typedef struct wui_context_t

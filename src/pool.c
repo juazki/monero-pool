@@ -164,8 +164,8 @@ typedef struct config_t
     char upstream_host[MAX_HOST];
     uint16_t upstream_port;
     char pool_view_key[64];
-    bool check_hash;
-    bool miner_payments;
+    bool check_hash; // Disable hash checking (unsupported CPUs)
+    bool miner_payments; // Disable miner payments (own pool)
 
 } config_t;
 
@@ -290,6 +290,7 @@ static struct bufferevent *upstream_event;
 static struct event *timer_10s;
 static time_t upstream_last_time;
 static uint64_t upstream_last_height;
+static uint32_t miner_count;
 
 #ifdef HAVE_RX
 extern void rx_stop_mining();
@@ -2579,6 +2580,12 @@ upstream_on_event(struct bufferevent *bev, short error, void *ctx)
     {
         log_debug("Upstream timeout");
     }
+    /* Update stats due to upstream disconnect */
+    if (pool_stats.connected_miners != miner_count)
+    {
+        pool_stats.connected_miners = miner_count;
+        update_pool_hr();
+    }
     /* Wait and try to reconnect */
     if (upstream_event)
     {
@@ -2693,6 +2700,7 @@ client_add(int fd, struct bufferevent *bev, bool downstream)
     c->connected_since = time(NULL);
     c->downstream = downstream;
     bstack_new(&c->active_jobs, CLIENT_JOBS_MAX, sizeof(job_t), job_recycle);
+    miner_count++;
     if (!downstream)
         pool_stats.connected_miners++;
     if (upstream_event)
@@ -2736,6 +2744,7 @@ client_clear(struct bufferevent *bev)
     bufferevent_free(bev);
     if (upstream_event)
         upstream_send_client_disconnect();
+    miner_count--;
 }
 
 static void
@@ -3060,7 +3069,7 @@ miner_on_submit(json_object *message, client_t *client)
     
     hex_to_bin(result_hex, 64, submitted_hash, 32);
     
-    /* Disable hash checking (unsupported CPUs) */
+    // Disable hash checking (unsupported CPUs)
     if (config.check_hash)
     {
         uint8_t major_version = (uint8_t)block[0];
@@ -3110,6 +3119,7 @@ miner_on_submit(json_object *message, client_t *client)
     log_trace("Checking hash against block difficulty: "
             "%lu, hash difficulty: %lu, job difficulty: %lu",
             BN_get_word(bd), BN_get_word(hd), BN_get_word(jd));
+    if (BN_get_word(hd) > pool_stats.best_hash_difficulty) pool_stats.best_hash_difficulty = BN_get_word(hd);
 
     if (BN_cmp(hd, bd) >= 0)
     {
@@ -3966,7 +3976,7 @@ run(void)
         
     fetch_view_key();
     
-    /* Disable miner payments (own pool) */
+    // Disable miner payments (own pool)
     if (config.miner_payments)
     {
         timer_10m = evtimer_new(pool_base, timer_on_10m, NULL);
@@ -4192,6 +4202,7 @@ int main(int argc, char **argv)
 
     wui_context_t uic;
     uic.port = config.webui_port;
+    pool_stats.best_hash_difficulty = 0;
     uic.pool_stats = &pool_stats;
     uic.pool_fee = config.pool_fee;
     strncpy(uic.pool_listen, config.pool_listen, sizeof(uic.pool_listen)-1);

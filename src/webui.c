@@ -77,6 +77,7 @@ send_json_stats(struct evhttp_request *req, void *arg)
     unsigned ss = context->allow_self_select;
     uint64_t mh = 0;
     double mb = 0.0;
+    uint64_t bh = context->pool_stats->best_hash_difficulty;
 
     hdrs_in = evhttp_request_get_input_headers(req);
     const char *cookies = evhttp_find_header(hdrs_in, "Cookie");
@@ -108,12 +109,13 @@ send_json_stats(struct evhttp_request *req, void *arg)
             "\"allow_self_select\":%u,"
             "\"connected_miners\":%d,"
             "\"miner_hashrate\":%"PRIu64","
-            "\"miner_balance\":%.8f"
+            "\"miner_balance\":%.8f,"
+            "\"best_hash_difficulty\":%"PRIu64
             "}", ph, rh, nh, nd, height, ltf, lbf, pbf,
             context->payment_threshold, context->pool_fee,
             context->pool_port, context->pool_ssl_port,
             ss, context->pool_stats->connected_miners,
-            mh, mb);
+            mh, mb, bh);
     hdrs_out = evhttp_request_get_output_headers(req);
     evhttp_add_header(hdrs_out, "Content-Type", "application/json");
     evhttp_send_reply(req, HTTP_OK, "OK", buf);
